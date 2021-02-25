@@ -1,20 +1,10 @@
 #HCBC Bleaching Exploration
-library(ggplot2)
-#library(plotly)
-library(lubridate)
-library(leaflet)
-library(RColorBrewer)
-library(htmltools)
-library(sp)
-library(raster)
-library(ncdf4)
-library(rasterVis)
-library(reshape)
-library(plyr)
-library(htmlwidgets)
+source("./HCBC_2015/HelperCode/gcdist.R")
+source("./HCBC_2015/HelperCode/HCBC_2015_Functions.R")
+
 #rc2cv_index=function(r,c,nrow_matrix=max(r)){return((c-1)*nrow_matrix+r)}
 
-inpath="M:/Environmental Data Summary/HCBCProject/HCBC/RERUN2019/"
+inpath="./HCBC_2015/"
 #read in HCBC Dataset
 HCBC=read.csv(paste0(inpath,"HCBC_MHI_2015_10.11.csv"))
 
@@ -157,6 +147,7 @@ HCBC_cluster_2km=ddply(HCBCdf,.(Island_Name,RasterAddress_2km,DepthBin_5m),summa
                        Depth_m_mn=median(Depth_m,na.rm=TRUE),
                        Longitude_mn=mean(Longitude_DD,na.rm=TRUE),
                        Latitude_mn=mean(Latitude_RAS_2km,na.rm=TRUE),
+                       Date_mn=mean(ObservationDate_R,na.rm=TRUE),
                        Longitude_ras=mean(Longitude_RAS_2km,na.rm=TRUE),
                        Latitude_ras=mean(Latitude_DD,na.rm=TRUE),
                        AreaSurveyed_m2_sum=sum(AreaSurveyed_m2,na.rm=TRUE),
@@ -182,6 +173,7 @@ HCBC_cluster_1km=ddply(HCBCdf,.(Island_Name,RasterAddress_1km,DepthBin_5m),summa
                    Depth_m_mn=median(Depth_m,na.rm=TRUE),
                    Longitude_mn=mean(Longitude_DD,na.rm=TRUE),
                    Latitude_mn=mean(Latitude_RAS_1km,na.rm=TRUE),
+                   Date_mn=mean(ObservationDate_R,na.rm=TRUE),
                    Longitude_ras=mean(Longitude_RAS_1km,na.rm=TRUE),
                    Latitude_ras=mean(Latitude_DD,na.rm=TRUE),
                    AreaSurveyed_m2_sum=sum(AreaSurveyed_m2,na.rm=TRUE),
@@ -208,6 +200,7 @@ HCBC_cluster_500m=ddply(HCBCdf,.(Island_Name,RasterAddress_500m,DepthBin_5m),sum
                        Depth_m_mn=median(Depth_m,na.rm=TRUE),
                        Longitude_mn=mean(Longitude_DD,na.rm=TRUE),
                        Latitude_mn=mean(Latitude_RAS_500m,na.rm=TRUE),
+                       Date_mn=mean(ObservationDate_R,na.rm=TRUE),
                        Longitude_ras=mean(Longitude_RAS_500m,na.rm=TRUE),
                        Latitude_ras=mean(Latitude_DD,na.rm=TRUE),
                        AreaSurveyed_m2_sum=sum(AreaSurveyed_m2,na.rm=TRUE),
@@ -234,6 +227,7 @@ HCBC_cluster_250m=ddply(HCBCdf,.(Island_Name,RasterAddress_250m,DepthBin_5m),sum
                        Depth_m_mn=median(Depth_m,na.rm=TRUE),
                        Longitude_mn=mean(Longitude_DD,na.rm=TRUE),
                        Latitude_mn=mean(Latitude_RAS_250m,na.rm=TRUE),
+                       Date_mn=mean(ObservationDate_R,na.rm=TRUE),
                        Longitude_ras=mean(Longitude_RAS_250m,na.rm=TRUE),
                        Latitude_ras=mean(Latitude_DD,na.rm=TRUE),
                        AreaSurveyed_m2_sum=sum(AreaSurveyed_m2,na.rm=TRUE),

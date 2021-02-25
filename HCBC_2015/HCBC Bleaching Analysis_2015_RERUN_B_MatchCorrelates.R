@@ -1,48 +1,12 @@
 #HCBC Bleaching Exploration
-library(ggplot2)
-library(plotly)
-library(leaflet)
-library(RColorBrewer)
-library(htmltools)
-library(sp)
-library(raster)
-library(ncdf4)
-library(rasterVis)
+source("./HCBC_2015/HelperCode/gcdist.R")
+source("./HCBC_2015/HelperCode/HCBC_2015_Functions.R")
+
 rep=data.frame(rbind(c(NaN,NA),c(Inf,NA),c(-Inf,NA)))
-source("C:/Users/Thomas.Oliver/WORK/Projects/Environmental Data Summary/HelperCode/gcdist.R")
-#Define Functions:
-lengthNONA=function(x){return(length(na.omit(x)))}
-ExpandingExtract=function(r,SpDF,Dists=c(500,1000,2000,4000,8000)){
-  OutDF=data.frame(values=rep(NA,nrow(SpDF)),Dist=rep(NA,nrow(SpDF)),N=rep(NA,nrow(SpDF)))
-  nDists=length(Dists)
-  cnt=1
-  NAi=which(is.na(OutDF$values))
-  NAsLeft=length(NAi)>0
-  while(cnt<=nDists&NAsLeft){
-    NAi=which(is.na(OutDF$values))
-    pull=extract(x=r,y=SpDF[NAi,],buffer=Dists[cnt],na.rm=TRUE)
-    Nper=unlist(lapply(pull,lengthNONA))
-    OutDF$values[NAi]=unlist(lapply(pull,mean,na.rm=TRUE))
-    OutDF$Dist[NAi]=Dists[cnt]
-    OutDF$N[NAi]=Nper
-    NAi=which(is.na(OutDF$values))
-    NAsLeft=length(NAi)>0
-    cnt=cnt+1
-  }
-  return(OutDF)
-}
-quant99=function(x) return(quantile(x,probs=0.99,na.rm=TRUE))
-quant01=function(x) return(quantile(x,probs=0.01,na.rm=TRUE))
-diff.rng=function(x,na.rm=TRUE) return(abs(diff(range(x,na.rm=na.rm))))
-wkly_rng=function(x){
-  diff.rng=function(x) return(abs(diff(range(x,na.rm=TRUE))))
-  out=rollapply(x,7,diff.rng)
-  return(mean(out,na.rm=TRUE))
-}
 
 
 #read in HCBC Dataset, convert to SpatialPointsDataFrame, and set the proj4string (i.e. Coordinate Reference System) of the dataset
-B=read.csv("/Users/thomas.oliver/WORK/Projects/HCBC/RERUN2019/ClusteredData/HCBC_2015_1km_Cluster.csv")
+B=read.csv("./HCBC_2015/ClusteredData/HCBC_2015_1km_Cluster.csv")
 coordinates(B)=~Longitude_mn+Latitude_mn
 #Lat Long, standard WGS84 CRS
 proj4string(B)="+init=epsg:4326 +proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs +towgs84=0,0,0"
@@ -53,10 +17,10 @@ proj4string(B)="+init=epsg:4326 +proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs
 # SatLayers - DHW
 ###############################
 ###############################
-dhw_v2=raster("/Users/thomas.oliver/WORK/Projects/HCBC/SatData/DHW/version2/dhw_b05kmnn_20151101.nc")
-dhw_v3=raster("/Users/thomas.oliver/WORK/Projects/HCBC/SatData/DHW/version3/b5km_dhw_20151101.nc")
-mur_dhw_15=raster("/Users/thomas.oliver/WORK/Projects/HCBC/SatData/DHW_MUR/MHI_MUR_DHW_MAX2015.grd")
-mur_dhw_14=raster("/Users/thomas.oliver/WORK/Projects/HCBC/SatData/DHW_MUR/MHI_MUR_DHW_MAX2014.grd")
+dhw_v2=raster("./HCBC_2015/SatData/DHW/version2/dhw_b05kmnn_20151101.nc")
+dhw_v3=raster("./HCBC_2015/SatData/DHW/version3/b5km_dhw_20151101.nc")
+mur_dhw_15=raster("./HCBC_2015/SatData/DHW_MUR/MHI_MUR_DHW_MAX2015.grd")
+mur_dhw_14=raster("./HCBC_2015/SatData/DHW_MUR/MHI_MUR_DHW_MAX2014.grd")
 
 proj4string(dhw_v2)="+init=epsg:4326 +proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs +towgs84=0,0,0"
 proj4string(dhw_v3)="+init=epsg:4326 +proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs +towgs84=0,0,0"
@@ -84,7 +48,7 @@ B$DHW_MUR_20151101=samp_DHWmur15$values
 # ModelLayers - Proportion of Bleaching Resistant Taxa
 ###############################
 ###############################
-P_brestaxa=raster("/Users/thomas.oliver/WORK/Projects/HCBC/PropBleachingResistantTaxa/resistant_coral_predicted_gcs84.tif")
+P_brestaxa=raster("./HCBC_2015/PropBleachingResistantTaxa/resistant_coral_predicted_gcs84.tif")
 
 proj4string(P_brestaxa)="+init=epsg:4326 +proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs +towgs84=0,0,0"
 
@@ -95,7 +59,7 @@ Dists=seq(10,10000,by=100)
 samp_Pbrt=ExpandingExtract(P_brestaxa.,B,Dists = Dists)
 
 B$Prop_BleachResTaxa=samp_Pbrt$values
-write.csv(B,"C:/Users/thomas.oliver/WORK/Projects/HCBC/RERUN2019/ClusteredData/HCBC_2015_1km_DHW_pBRT.csv")
+#write.csv(B,"./HCBC_2015/ClusteredData/HCBC_2015_1km_DHW_pBRT.csv")
 
 ###############################
 ###############################
@@ -104,7 +68,7 @@ write.csv(B,"C:/Users/thomas.oliver/WORK/Projects/HCBC/RERUN2019/ClusteredData/H
 ###############################
 
 #Deal With Lecky Layers
-LeckyPath="/Users/thomas.oliver/WORK/Projects/HCBC/LeckyLayer/FromJoey/"
+LeckyPath="./HCBC_2015LeckyLayer/FromJoey/"
 LeckyFileList=list.files(LeckyPath,recursive = TRUE)
 LenLFL=nchar(LeckyFileList)
 LeckyLayerList=LeckyFileList[grep(".tif",substr(LeckyFileList,LenLFL-3,LenLFL))]
@@ -145,7 +109,7 @@ points(B[which(is.nan(sed$values)),],pch=6)
 LLval$OTP_MHI_Sedimentation=sed$values
 LLval$OTP_MHI_Fishing_Commercial_Net=net$values
 
-write.csv(LLval,paste0("/Users/thomas.oliver/WORK/Projects/HCBC/RERUN2019/ClusteredData/LeckyExtractions_1km_2020.csv"))
+#write.csv(LLval,paste0("./HCBC_2015ClusteredData/LeckyExtractions_1km_2020.csv"))
 
 B@data[,names(LLval)]=LLval
 names(LLval)%in%names(B)
@@ -153,7 +117,7 @@ names(LLval)%in%names(B)
 
 #WAVE EXPOSURE
 B.=as.data.frame(B)
-WE=read.csv("/Users/thomas.oliver/WORK/Projects/HCBC/SatData/WaveExposure/15m_contours.csv")
+WE=read.csv("./HCBC_2015SatData/WaveExposure/15m_contours.csv")
 WE=subset(WE,BAD_FLAG==0)
 WE$mn1979_2012=rowMeans(WE[,4:37])
 Ds=gcdist.set1vset2(B.$Latitude_mn,B.$Longitude_mn,WE$y,WE$x)
@@ -163,11 +127,11 @@ WE_vec=WE$mn1979_2012[WE_i]
 class(B)
 B$WaveEnergy_MN1979.2012=WE_vec
 names(B)
-write.csv(B,paste0("C:/Users/thomas.oliver/WORK/Projects/HCBC/RERUN2019/ClusteredData/HCBC_2015_1km_OTP_WE_DHW_pBRT.csv"))
+#write.csv(B,paste0("./HCBC_2015/RERUN2019/ClusteredData/HCBC_2015_1km_OTP_WE_DHW_pBRT.csv"))
 
 RELOAD=FALSE
 if(RELOAD){
-  B=read.csv("/Users/thomas.oliver/WORK/Projects/HCBC/BleachingData/Canon/HCBC_1000m_SingleCluster_DHW.LL.WE.SST.20170829.csv")
+  B=read.csv("./HCBC_2015BleachingData/Canon/HCBC_1000m_SingleCluster_DHW.LL.WE.SST.20170829.csv")
   coordinates(B)=~Longitude_mn+Latitude_mn
   #Lat Long, standard WGS84 CRS
   proj4string(B)="+init=epsg:4326 +proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs +towgs84=0,0,0"
@@ -177,7 +141,7 @@ if(RELOAD){
 # K490
 ###############################
 ###############################
-K490.MHI=brick("/Users/thomas.oliver/WORK/Projects/HCBC/SatData/K490/MHI.K490_LayerBrick.grd")
+K490.MHI=brick("./HCBC_2015SatData/K490/MHI.K490_LayerBrick.grd")
 K490.MHI.=subs(K490.MHI,rep,subsWithNA=FALSE)
 
 
@@ -203,7 +167,7 @@ B@data[,names(K490val)]=K490val
 # PAR
 ###############################
 ###############################
-PAR.MHI=brick("/Users/thomas.oliver/WORK/Projects/HCBC/SatData/PAR/MHI.PAR_LayerBrick.grd")
+PAR.MHI=brick("./HCBC_2015SatData/PAR/MHI.PAR_LayerBrick.grd")
 #Replace Inf and NaN with NA
 rep=data.frame(rbind(c(NaN,NA),c(Inf,NA),c(-Inf,NA)))
 PAR.MHI.=subs(PAR.MHI,rep,subsWithNA=FALSE)
@@ -225,7 +189,7 @@ names(PARN)=names(PAR.MHI)
 B@data[,names(PARval)]=PARval
 
 head(B)
-write.csv(B,paste0("C:/Users/thomas.oliver/WORK/Projects/HCBC/RERUN2019/ClusteredData/HCBC_2015_1km_PAR_K490_OTP_WE_DHW_pBRT.csv"))
+#write.csv(B,paste0("./HCBC_2015/RERUN2019/ClusteredData/HCBC_2015_1km_PAR_K490_OTP_WE_DHW_pBRT.csv"))
 
 ###############################
 ###############################
@@ -263,7 +227,7 @@ B@data[,names(MURval)]=MURval
 names(B)=sub("rMHI","SST",names(B))
 names(B)
 
-write.csv(B,paste0("C:/Users/thomas.oliver/WORK/Projects/HCBC/RERUN2019/ClusteredData/HCBC_2015_1km_MUR_PAR_K490_OTP_WE_DHW_pBRT.csv"))
+#write.csv(B,paste0("./HCBC_2015/ClusteredData/HCBC_2015_1km_MUR_PAR_K490_OTP_WE_DHW_pBRT.csv"))
 
 PARi=grep("PAR",names(B))
 K490i=grep("K490",names(B))
@@ -278,7 +242,7 @@ PARz=B@data[,PARi]*exp(-(0.0085+1.6243*(B@data[,K490i]*(0.3048*B$Depth_m_mn))))
 dim(PARz)
 names(PARz)=sub("PAR","PARz",names(PARz))
 B@data=cbind(B@data,PARz)
-write.csv(as.data.frame(B),"/Users/thomas.oliver/WORK/Projects/HCBC/RERUN2019/ClusteredData/HCBC_2015_1km_PARz_MUR_PAR_K490_OTP_WE_DHW_pBRT.csv",row.names = FALSE)
+#write.csv(as.data.frame(B),"./HCBC_2015ClusteredData/HCBC_2015_1km_PARz_MUR_PAR_K490_OTP_WE_DHW_pBRT.csv",row.names = FALSE)
 
 
 ########################################################################################################################################################
