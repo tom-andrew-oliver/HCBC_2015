@@ -12,6 +12,35 @@ source("./HCBC_2015/HelperCode/HCBC_2015_Functions.R")
 B=read.csv("./HCBC_2015/ClusteredData/HCBC_2015_1km_PARz_MUR_PAR_K490_OTP_WE_DHW_pBRT.csv")
 B$DepthBin_5m=factor(B$DepthBin_5m,levels=rev(unique(B$DepthBin_5m)))
 head(B)
+names(B)
+
+#Pull EDS data
+EDS=read.csv("./HCBC_2015/SatData/HCBC2015_EDS_Out_2021-03-03.csv")
+# DHW_v3_20151101_sc+
+#   PAR.2015.mn_sc+
+#   K490.2015.mn_sc+
+#   SST.LT.sum_wk_rng.mn_sc+
+#   Prop_BleachResTaxa_sc+
+#   Sqrt_Total_Eff_sc+
+#   Sqrt_AgGolf_sc+
+#   Sqrt_Urban_sc+
+#   Sqrt_Wave_Energy_sc+
+#   Sqrt_TourRec_sc+
+#   Depth_m_mn_sc)
+
+EDSs=EDS[,c(names(EDS)[1:11],
+            "DHW.MeanMax_Degree_Heating_Weeks_MO03",
+            "DHW.MeanMax_Degree_Heating_Weeks_YR10YR01",
+            "mean_PAR_MODIS_Daily_MO03",
+            "mean_kdPAR_VIIRS_Weekly_MO03",
+            "mean_weekly_range_SST_CRW_Daily_ALLB4",
+            "mean_biweekly_range_SST_CRW_Daily_ALLB4",
+            "mean_monthly_range_SST_CRW_Daily_ALLB4")]
+
+Bs=merge(B,EDSs)
+Bs[which(Bs==-9991,arr.ind = T)]=NA
+B=Bs
+
 #Remove shitty NA datapoint
 NA_row=table(which(is.na(B),arr.ind = TRUE)[,1])
 drop=as.numeric(names(NA_row[which(NA_row>10)]))
@@ -79,6 +108,14 @@ off=min(B$WaveEnergy_MN1979.2012[B$WaveEnergy_MN1979.2012>0])/2
 B$Log_Wave_Energy=log10(B$WaveEnergy_MN1979.2012)
 B$Sqrt_Wave_Energy=sqrt(B$WaveEnergy_MN1979.2012)
 
+#PARz
+# calculate PARz = PARs * exp(-Kpar*Z) 
+# PARs = Surface PAR
+# Kpar = attenuation coefficient for PAR
+# Z = depth in meters
+# PARz = PAR at depth
+# exp(x) = e^x ; exponential function in R
+B$mean_PARz_MODIS_Daily_MO03 <- B$mean_PAR_MODIS_Daily_MO03*exp(-B$mean_kdPAR_VIIRS_Weekly_MO03*B$Depth_m_mn)
 
 
 # Transform Test ----------------------------------------------------------
@@ -107,14 +144,21 @@ B$Sqrt_Wave_Energy=sqrt(B$WaveEnergy_MN1979.2012)
 
 # Set-Up Correlation ------------------------------------------------------
 # Define Driver Columns
-all_x=c("Depth_m_mn",names(B)[c(which(names(B)=="DHW_v3_20151101"):ncol(B))])
+not_x=c(names(B)[1:(which(names(B)=="DHW_v2_20151101")-1)],"rownum","Date_mn","val")
+all_x=c("Depth_m_mn",setdiff(names(B),not_x))#,names(B)[c(which(names(B)=="DHW_v3_20151101"):ncol(B))])
 
-#Drop Columns with lots of NA
+#Drop Columns with greater than 5 NA values
 countNA=function(x){return(length(which(is.na(x))))}
 HowManyNA=apply(B[,all_x],2,countNA)
-dropcols=names(which(HowManyNA>0))
+dropcols=names(which(HowManyNA>5))
 #Drop any columns with NA data
 if(length(dropcols)>0){all_x=all_x[-which(all_x%in%dropcols)]}
+
+#Drop any NA rows
+drop_row=sort(unique(which(is.na(B[,all_x]),arr.ind = T)[,1]))
+if(length(drop_row)>0){B=B[-drop_row,]}
+
+
 
 #Drop all PAR specific columns, and all 2014 columns
 #dropcols2=unique(c(grep("PAR.2",all_x),grep("PAR.L",all_x),grep("2014",all_x)))
@@ -137,6 +181,7 @@ CorW[is.na(CorW)]=CorW_05
 CorW[CorW>CorW_95]=CorW_95
 CorW=CorW/CorW_95
 hist(CorW,50)
+B$CorW=CorW
 
 # Scale X Values  --------------------------------------------------
 for(xi in 1:length(all_x)){
@@ -150,62 +195,76 @@ B$Sqrt_LBSP_sc=B$Sqrt_AgGolf_sc+B$Sqrt_Urban_sc
 
 # Run Full Model  --------------------------------------------------
 #####################################################################Full Hypothesis Driven Model - LM
-hypmod_NoInt=lm(PctAffected_mean~(
-  DHW_v3_20151101_sc+
-    PAR.2015.mn_sc+
-    K490.2015.mn_sc+
-    SST.LT.sum_wk_rng.mn_sc+
-    Prop_BleachResTaxa_sc+
-    Sqrt_Total_Eff_sc+
-    Sqrt_AgGolf_sc+
-    Sqrt_Urban_sc+
-    Sqrt_Wave_Energy_sc+
-    Sqrt_TourRec_sc+
-    Depth_m_mn_sc),
-  data=B,
-  na.action = na.fail,
-  weights = CorW)
+hypmod_NoInt=lm(PctAffected_mean~
+                  DHW.MeanMax_Degree_Heating_Weeks_MO03_sc+
+                  DHW.MeanMax_Degree_Heating_Weeks_YR10YR01_sc+
+                  mean_PAR_MODIS_Daily_MO03_sc+
+                  mean_kdPAR_VIIRS_Weekly_MO03_sc+
+                  mean_weekly_range_SST_CRW_Daily_ALLB4_sc+
+                  Prop_BleachResTaxa_sc+
+                  Sqrt_Total_Eff_sc+
+                  Sqrt_AgGolf_sc+
+                  Sqrt_Urban_sc+
+                  Sqrt_Wave_Energy_sc+
+                  Sqrt_TourRec_sc+
+                  Depth_m_mn_sc,
+                data=B,
+                na.action = na.fail,
+                weights = CorW)
 
-sort(vif(hypmod_NoInt))
+sort(vif(hypmod_NoInt),decreasing = T)
 modcol=names(vif(hypmod_NoInt))
-pairs(B[,c("PctAffected_mean",modcol)],lower.panel=panel.cor)
+pairs(B[,c("PctAffected_mean",modcol)],upper.panel=panel.cor)
+# 
+# hypmod_NoInt_PARZ=lm(PctAffected_mean~
+#                   DHW.MeanMax_Degree_Heating_Weeks_MO03_sc+
+#                   DHW.MeanMax_Degree_Heating_Weeks_YR10YR01_sc+
+#                   mean_PARz_MODIS_Daily_MO03_sc+
+#                   mean_weekly_range_SST_CRW_Daily_ALLB4_sc+
+#                   Prop_BleachResTaxa_sc+
+#                   Sqrt_Total_Eff_sc+
+#                   Sqrt_AgGolf_sc+
+#                   Sqrt_Urban_sc+
+#                   Sqrt_Wave_Energy_sc+
+#                   Sqrt_TourRec_sc,
+#                 data=B,
+#                 na.action = na.fail,
+#                 weights = CorW)
+# 
+# sort(vif(hypmod_NoInt_PARZ))
+# modcol=names(vif(hypmod_NoInt_PARZ))
+# pairs(B[,c("PctAffected_mean",modcol)],lower.panel=panel.cor)
 
 
-hypmod=lm(PctAffected_mean~(
-  DHW_v3_20151101_sc+
-    PAR.2015.mn_sc+
-    K490.2015.mn_sc+
-    SST.LT.sum_wk_rng.mn_sc+
-    Prop_BleachResTaxa_sc+
-    Sqrt_Total_Eff_sc+
-    Sqrt_AgGolf_sc+
-    Sqrt_Urban_sc+
-    Sqrt_Wave_Energy_sc+
-    Sqrt_TourRec_sc+
-    Depth_m_mn_sc+
-    DHW_v3_20151101_sc:PAR.2015.mn_sc+
-    DHW_v3_20151101_sc:K490.2015.mn_sc+
-    DHW_v3_20151101_sc:SST.LT.sum_wk_rng.mn_sc+
-    DHW_v3_20151101_sc:Prop_BleachResTaxa_sc+
-    DHW_v3_20151101_sc:Sqrt_Total_Eff_sc+
-    DHW_v3_20151101_sc:Sqrt_AgGolf_sc+
-    DHW_v3_20151101_sc:Sqrt_Urban_sc+
-    DHW_v3_20151101_sc:Sqrt_Wave_Energy_sc+
-    DHW_v3_20151101_sc:Sqrt_TourRec_sc+
-    DHW_v3_20151101_sc:Depth_m_mn_sc+
-    Prop_BleachResTaxa_sc:PAR.2015.mn_sc+
-    Prop_BleachResTaxa_sc:K490.2015.mn_sc+
-    Prop_BleachResTaxa_sc:SST.LT.sum_wk_rng.mn_sc+
-    Prop_BleachResTaxa_sc:Prop_BleachResTaxa_sc+
-    Prop_BleachResTaxa_sc:Sqrt_Total_Eff_sc+
-    Prop_BleachResTaxa_sc:Sqrt_AgGolf_sc+
-    Prop_BleachResTaxa_sc:Sqrt_Urban_sc+
-    Prop_BleachResTaxa_sc:Sqrt_Wave_Energy_sc+
-    Prop_BleachResTaxa_sc:Sqrt_TourRec_sc+
-    Prop_BleachResTaxa_sc:Depth_m_mn_sc),
-  data=B,
-  na.action = na.fail,
-  weights = CorW)
+
+# Surface PAR -------------------------------------------------------------
+hypmod=lm(PctAffected_mean~
+            DHW.MeanMax_Degree_Heating_Weeks_MO03_sc+
+            DHW.MeanMax_Degree_Heating_Weeks_YR10YR01_sc+
+            mean_PAR_MODIS_Daily_MO03_sc+
+            mean_kdPAR_VIIRS_Weekly_MO03_sc+
+            mean_weekly_range_SST_CRW_Daily_ALLB4_sc+
+            Prop_BleachResTaxa_sc+
+            Sqrt_Total_Eff_sc+
+            Sqrt_AgGolf_sc+
+            Sqrt_Urban_sc+
+            Sqrt_Wave_Energy_sc+
+            Sqrt_TourRec_sc+
+            Depth_m_mn_sc+
+            DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:DHW.MeanMax_Degree_Heating_Weeks_YR10YR01_sc+
+            DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:mean_PAR_MODIS_Daily_MO03_sc+
+            DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:mean_kdPAR_VIIRS_Weekly_MO03_sc+
+            DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:mean_weekly_range_SST_CRW_Daily_ALLB4_sc+
+            DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:Prop_BleachResTaxa_sc+
+            DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:Sqrt_Total_Eff_sc+
+            DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:Sqrt_AgGolf_sc+
+            DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:Sqrt_Urban_sc+
+            DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:Sqrt_Wave_Energy_sc+
+            DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:Sqrt_TourRec_sc+
+            DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:Depth_m_mn_sc,
+          data=B,
+          na.action = na.fail,
+          weights = CorW)
 
 shypmod=summary(hypmod)
 shypmod
@@ -216,6 +275,15 @@ StepHyp=stepAIC(hypmod,k = log(nrow(B)))
 SumStepHyp=summary(StepHyp)
 SumStepHyp
 
+#vif check
+modints=attr(SumStepHyp$terms,"term.labels")
+modints=modints[grep(":",modints)]
+StepHypNoInt=dropNterm(mod = StepHyp,drop_terms = modints,drop_ints = T)
+
+vif_final=vif(StepHypNoInt)
+vif_final[order(vif_final,decreasing = T)]
+
+# On we go... -------------------------------------------------------------
 CoefStepHyp=as.data.frame(SumStepHyp$coefficients)
 CoefStepHyp=CoefStepHyp[-1,]
 CoefStepHyp[order(CoefStepHyp$Estimate,decreasing = T),]
@@ -223,336 +291,47 @@ CoefStepHyp$Name=row.names(CoefStepHyp)
 CoefStepHyp$Name=factor(CoefStepHyp$Name,levels=CoefStepHyp[order(abs(CoefStepHyp$Estimate)-abs(CoefStepHyp$`Std. Error`),decreasing = F),"Name"])
 CoefStepHyp$SigClass=cut(CoefStepHyp$`Pr(>|t|)`,breaks=c(0,.0001,.001,.01,.05,Inf),labels=c("p<0.0001","p<0.001","p<0.01","p<0.05","NS"))
 
-SumStepHyp
-ggplot(CoefStepHyp,aes(x=Estimate,xmin=Estimate-`Std. Error`,xmax=Estimate+`Std. Error`,y=Name,color=SigClass))+
-  geom_point()+
-  geom_errorbarh()+
-  geom_vline(xintercept = 0)+theme_bw()
 
-StepHypNoInt=update(StepHyp,".~.-DHW_v3_20151101_sc:PAR.2015.mn_sc -DHW_v3_20151101_sc:K490.2015.mn_sc   -DHW_v3_20151101_sc:Log_Total_Eff_sc  -DHW_v3_20151101_sc:Depth_m_mn_sc      -Prop_BleachResTaxa_sc:Depth_m_mn_sc ")
-summary(StepHypNoInt)
+# PARz Model --------------------------------------------------------------
+# hypmodPz=lm(PctAffected_mean~(
+#   DHW.MeanMax_Degree_Heating_Weeks_MO03_sc+
+#     DHW.MeanMax_Degree_Heating_Weeks_YR10YR01_sc+
+#     mean_PARz_MODIS_Daily_MO03_sc+
+#     mean_weekly_range_SST_CRW_Daily_ALLB4_sc+
+#     Prop_BleachResTaxa_sc+
+#     Sqrt_Total_Eff_sc+
+#     Sqrt_AgGolf_sc+
+#     Sqrt_Urban_sc+
+#     Sqrt_Wave_Energy_sc+
+#     Sqrt_TourRec_sc+
+#     DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:mean_PARz_MODIS_Daily_MO03_sc+
+#     DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:mean_weekly_range_SST_CRW_Daily_ALLB4_sc+
+#     DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:Prop_BleachResTaxa_sc+
+#     DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:Sqrt_Total_Eff_sc+
+#     DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:Sqrt_AgGolf_sc+
+#     DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:Sqrt_Urban_sc+
+#     DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:Sqrt_Wave_Energy_sc+
+#     DHW.MeanMax_Degree_Heating_Weeks_MO03_sc:Sqrt_TourRec_sc+
+#     Prop_BleachResTaxa_sc:mean_PARz_MODIS_Daily_MO03_sc+
+#     Prop_BleachResTaxa_sc:mean_weekly_range_SST_CRW_Daily_ALLB4_sc+
+#     Prop_BleachResTaxa_sc:Prop_BleachResTaxa_sc+
+#     Prop_BleachResTaxa_sc:Sqrt_Total_Eff_sc+
+#     Prop_BleachResTaxa_sc:Sqrt_AgGolf_sc+
+#     Prop_BleachResTaxa_sc:Sqrt_Urban_sc+
+#     Prop_BleachResTaxa_sc:Sqrt_Wave_Energy_sc+
+#     Prop_BleachResTaxa_sc:Sqrt_TourRec_sc),
+#   data=B,
+#   na.action = na.fail,
+#   weights = CorW)
+# 
+# shypmodPz=summary(hypmodPz)
+# shypmodPz
+# 
+# StepHypPz=stepAIC(hypmodPz,k = log(nrow(B)))
+
+#SumStepHypPz=summary(StepHypPz)
+#SumStepHypPz
+
+#SumStepHyp
+#SumStepHypPz
 
-sort(vif(StepHypNoInt))
-pairs(B[,c("PctAffected_mean",names(vif(StepHypNoInt)))],lower.panel=panel.cor)
-
-
-sensitivity_prediction_matrix_sc=function(mod,data,pperturb=.1){
-  terms=attributes(mod$terms)$term.labels[attributes(mod$terms)$order==1]
-  response=as.character(mod$call$formula)[2]
-  org_data=data[,c(terms,response)]
-  
-  #Get unscaled data
-  uc_terms=substr(terms,1,nchar(terms)-3)
-  uc_data=data[,c(uc_terms)]
-
-  #set up for scaling after perterbation
-  mn_data=apply(uc_data,2,mean,na.rm=T)
-  sd_data=apply(uc_data,2,sd,na.rm=T)
-  mn_mat=matrix(rep(mn_data,nrow(uc_data)),ncol = ncol(uc_data),nrow=nrow(uc_data),byrow = T)
-  sd_mat=matrix(rep(sd_data,nrow(uc_data)),ncol = ncol(uc_data),nrow=nrow(uc_data),byrow = T)
-  
-  out_data=data.frame(SITE_ID=rep(1:nrow(org_data),2),Y=c(org_data[,response],predict(mod,new_data=org_data)),
-                      VAR=c(rep("OBS",nrow(org_data)),rep("PRED",nrow(org_data))),
-                      DIRECTION="NONE")
-  for(i in 1:length(uc_terms)){
-    #Nudge Up
-    mod_data=uc_data
-    nudge_by=mean(mod_data[,uc_terms[i]],na.rm=T)*pperturb
-    mod_data[,uc_terms[i]]=mod_data[,uc_terms[i]]+nudge_by
-    mod_data_sc=(mod_data-mn_mat)/sd_mat
-    names(mod_data_sc)=paste0(names(mod_data),"_sc")
-    append_data=data.frame(SITE_ID=1:nrow(org_data),Y=predict(mod,newdata=mod_data_sc),VAR=terms[i],DIRECTION="UP")
-    out_data=rbind(out_data,append_data)
-    #Nudge Down
-    mod_data=uc_data
-    nudge_by=mean(mod_data[,uc_terms[i]],na.rm=T)*pperturb
-    mod_data[,uc_terms[i]]=mod_data[,uc_terms[i]]-nudge_by
-    mod_data_sc=(mod_data-mn_mat)/sd_mat
-    names(mod_data_sc)=paste0(names(mod_data),"_sc")
-    append_data=data.frame(SITE_ID=1:nrow(org_data),Y=predict(mod,newdata=mod_data_sc),VAR=terms[i],DIRECTION="DOWN")
-    out_data=rbind(out_data,append_data)
-  }
-  return(out_data)
-}
-
-ss=sensitivity_prediction_matrix_sc(mod = StepHyp,data=B,pperturb = .10)
-lsort=subset(ss,VAR=="OBS")
-lsort=lsort[order(lsort$Y),]
-ss$SITE_ID=factor(ss$SITE_ID,levels=lsort$SITE_ID)
-ss$VAR=factor(ss$VAR,levels=c("OBS","PRED",terms))
-
-ggplot(ss,aes(x=SITE_ID,y=Y,color=DIRECTION))+geom_point()+facet_wrap("VAR")+ggtitle("25% Perturbation")+scale_x_discrete(guide=NULL)
-
-sss=ddply(ss,.(VAR,DIRECTION),summarize,mn=mean(Y),N=length(Y),sd=sd(Y),se=sd/sqrt(N))
-sss
-
-yoff=subset(sss,VAR=="PRED")$mn
-ggplot(sss,aes(y=VAR,x=mn-yoff,xmin=mn-se-yoff,xmax=mn+se-yoff,color=DIRECTION))+
-  geom_point()+
-  geom_errorbar()+
-  theme_bw()+
-  geom_vline(xintercept = 0)+
-  scale_x_reverse()+
-  theme(axis.text.x = element_text(angle=45,hjust=1))+ggtitle("Sensitivity Plot, +/- 10%")
-
-modminus=update(StepHyp,.~-DHW_v3_20151101_sc)
-
-
-bestmodsim2=gam(PctAffected_mean~
-                  s(DHW_v3_20151101_sc,k=3)+
-                  s(PAR.2015.mn_sc,k=3)+
-                 s(K490.2015.mn_sc,k=3)+
-                  s(SST.LT.sum_wk_rng.mn_sc,k=3)+
-                 # s(Prop_BleachResTaxa_sc,k=3)+
-                  #s(Log_Total_Eff_sc,k=3)+
-                  #s(Log_AgGolf_sc,k=3)+
-                  s(Log_Urban_sc,k=3)+
-                  s(Log_TourRec_sc,k=3)+
-                  #s(Log_Wave_Energy_sc,k=3)+
-                  s(Depth_m_mn_sc,k=3)
-                ,data=B,na.action = na.fail,weights = CorW)
-sbmod2=summary(bestmodsim2)
-sbmod2
-plot(bestmodsim2,pages=1,residuals=T)
-
-
-
-#####################################################################Best Hypothesis Driven Model
-bestmodsim2=gam(PctAffected_mean~
-                  s(DHW_v3_20151101,k=5)+
-                  s(PARz.2015.mn,k=5)+
-                  s(SST.LT.sum_wk_rng.mn,k=5)+
-                  s(PARz.LT.sum_wk_rng,k=5)+
-                  s(Prop_BleachResTaxa,k=3)+
-                  s(LogTotalEff,k=5)+
-                  s(WaveEnergy_MN1979.2012,k=5)+
-                  s(Depth_m_mn,k=3)
-                ,data=B,na.action = na.fail)
-sbmod2=summary(bestmodsim2)
-sbmod2
-#####################################################################
-
-
-
-
-
-
-
-
-#PCA Analysis
-pcB=prcomp(B[,all_x],scale. = T)
-plot(pcB)
-biplot(pcB,cex=.5)
-fviz_eig(pcB)
-fviz_pca_ind(pcB,
-             col.ind = "cos2", # Color by the quality of representation
-             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
-             repel = TRUE     # Avoid text overlapping
-)
-
-fviz_pca_var(pcB,
-             col.var = "contrib", # Color by contributions to the PC
-             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
-             repel = TRUE     # Avoid text overlapping
-)
-
-pcBx=data.frame(PctAffected_mean=B$PctAffected_mean,pcB$x)
-pcGAM=GamThemAll(y = "PctAffected_mean",xes = names(pcBx)[2:8],df = "pcBx",k=3)
-pcD=dredge(pcGAM,rank = "BIC")
-subset(pcD,delta<4)
-bestmod.pc=get.models(pcD,1)[[1]]
-summary(bestmod.pc)
-plot(bestmod.pc,pages=1,cex=4,residuals=T)
-
-
-
-
-library(dendextend)
-#Check for Colinearity & Univariate Correlation
-XX=1-(cor(B[,all_x])^2)
-hcXX=hclust(as.dist(XX))
-
-gcorY=rep(NA,length(all_x));names(gcorY)=all_x
-for(i in 1:length(all_x)){
-  gam1mod=GamThemAll(y = "PctAffected_mean",xes = c(all_x[i]),df = "B",k = 3)
-  gcorY[i]=BIC(gam1mod)
-}
-
-#Cluster Variables into co-linear clusters
-colin.thresh=0.6
-colin_clust=cutree(tree = hcXX,h = 1-colin.thresh)
-
-dev.off()
-plot(hcXX,cex=.75)
-abline(h=1-colin.thresh,col="red",lty=3)
-#rect.hclust(hcXX,h=1-colin.thresh)
-
-#build model with one variable (by univariate BIC) from each cluster
-K=length(unique(colin_clust))
-globalmod_vars=NULL
-for(i in 1:K){
-  thisclustBIC=gcorY[which(colin_clust==i)]
-  globalmod_vars=c(globalmod_vars,  names(thisclustBIC[which.min(thisclustBIC)]))
-}
-
-gcorY2=gcorY[which(names(gcorY)%in%globalmod_vars)]
-gcorY2=sort(gcorY2)
-
-XX2=1-(cor(B[,names(gcorY2)])^2)
-hcXX2=hclust(as.dist(XX2))
-dev.off()
-plot(hcXX2,cex=.75)
-abline(h=1-colin.thresh,col="red",lty=3)
-rect.hclust(hcXX2,h=1-colin.thresh)
-length(gcorY2)
-gcorY2=gcorY2[-which(names(gcorY2)%in%c("SST.LT.mn","K490.2015.mi","ShipBased_Shipping"))]
-
-#Gam Them All, In Blocks of 6
-supermod=GamThemAll(y = "PctAffected_mean",xes = names(gcorY2)[1:30],df = "B",k = 3)
-superD=dredge(supermod,m.lim = c(3,6))
-
-#Gam Them All, In Blocks of 6
-Nparam=length(globalmod_vars)
-Nparam
-Nruns=100
-NdredgeParams=10
-dredgetable=NULL
-dredgeDF=na.omit(B[,c("PctAffected_mean",globalmod_vars)])
-for(i in 1:Nruns){
-  dredgemod_vars=sample(globalmod_vars,NdredgeParams)
-  dredgemod=GamThemAll(y = "PctAffected_mean",xes = dredgemod_vars,df = "dredgeDF",k=3)
-  
-  #Dredge Down to a Select Few
-  this_dredgeset=dredge(dredgemod,m.lim=c(1,3))
-  if(i==1){
-    dredgetable=this_dredgeset
-  }else{
-    dredgetable=rbind(dredgetable,this_dredgeset)
-  }
-  print(paste("Run",i,"of",Nruns,"-"))
-}
-
-par(mar=c(2,2,10,2))
-plot(dredgetable,cex=.75)
-subset(dredgetable,delta<5)
-RelMod=model.avg(dredgetable)
-summary(RelMod)
-Import=RelMod$importance
-
-par(mfrow=c(1,1),mar=c(16,4,4,2))
-barplot(as.numeric(Import),names.arg =names(Import),las=2,
-        ylab="Relative Importance",
-        main="Parameter Relative Importance, \nGlobal Model Average",
-        col=c(rep("red",3),rep("gray",length(Import)-3)),cex.names =.5)
-title(xlab="Hypothesized Exposure Driver",line=14)
-dev.off()
-
-
-
-## Hypthothessis Driven Model Selection ######################################
-#Build Hypothesis, swap within co-linear cluster
-basemod=gam(PctAffected_mean~
-              s(Depth_m_mn,k=3)+
-              s(DHW_v3_20151101,k=3)+
-              s(PARz.2015.mn,k=3)+
-              s(PARz.LT.mn,k=3)+
-              s(PARz.2015.rng,k=3)+
-              s(PARz.LT.rng,k=3)+
-              s(SST.LT.wk_rng.mn,k=3)+
-              s(WaveEnergy_MN1979.2012,k=3)+
-              s(Prop_BleachResTaxa,k=3)+
-              s(LogTotalEff,k=3)+
-              s(Sediment_Zero,k=3)+
-              s(LBSP_Urban_runoff_01,k=3)+
-              s(LBSP_AgGolf_runoff_01,k=3)+
-              s(OTP_MHI_Fishing_NonCommercial_ShoreBased_Total,k=3)+
-              s(OTP_MHI_Fishing_NonCommercial_BoatBased_Total,k=3)+
-              s(OTP_MHI_Fishing_Commercial_Total,k=3)
-            ,data=B,na.action = na.fail)
-summary(basemod)
-testmod=lm(Btest$PctAffected_mean~predict(basemod,newdata=Btest))
-summary(testmod)
-vif.gam(basemod)head(b0)
-
-Dbase=dredge(basemod,rank = "BIC",m.lim = c(3,6))
-
-bestmod=get.models(Dbase,1)[[1]]
-summary(bestmod)
-vis.gam(bestmod)
-dev.off()
-plot(bestmod,pages=1,residuals=T,cex=5)
-
-
-ri=calc.relimp(bestmod,rela=T)
-sort(ri$lmg)*100
-
-AIC(basemod)
-length(predict(basemod))
-
-
-Btrain_i=sample(1:nrow(B),round(.9*nrow(B)),replace=F)
-Btrain=B[Btrain_i,]
-Btest_i=setdiff(1:nrow(B),Btrain_i)
-Btest=B[Btest_i,]
-bestmodsim=gam(PctAffected_mean~
-                 s(DHW_v3_20151101,k=3)+
-                 s(LogTotalEff,k=3)+
-                 s(PARz.2015.mn,k=3)+
-                 s(WaveEnergy_MN1979.2012,k=3)+
-                 s(LBSP_Urban_runoff_01,k=3)+
-                 s(Prop_BleachResTaxa,k=3)+
-                 s(Depth_m_mn,k=3)+
-                 s(OTP_MHI_Fishing_Commercial_Total,k=3),data=Btrain,na.action = na.fail)
-summary(bestmodsim)
-testmod=lm(Btest$PctAffected_mean~predict(basemod,newdata=Btest))
-summary(testmod)
-
-
-vis.gam(bestmodsim,view = c("DHW_v3_20151101","PARz.2015.mn"),theta=-45)
-vis.gam(bestmodsim,view = c("LogTotalEff","Prop_BleachResTaxa"))
-
-obsd=testset$PctAffected_mean
-pred=predict(basemod,newdata=testset)
-plot(obsd,pred,xlab="Observed",ylab="Predicted")
-lmod=lm(obsd~pred)
-summary(lmod)
-abline(lmod)
-################################################################################
-
-
-BaseModAVG=model.avg(Dbase)
-summary(BaseModAVG)
-Import=BaseModAVG$importance
-
-par(mfrow=c(1,1),mar=c(16,4,4,2))
-Variables=c("Degree Heating Weeks",
-            "Depth",
-            "PARz 2015 mean",
-            "Prop. Bleaching\nResistant Corals",
-            "Commericial Fishing",
-            "Total Sewage Effluent (log)",
-            "Urban Runoff",
-            "Wave Energy 1979-2012",
-            "Sediment",
-            "Non-Commericial Fishing (Shore)",
-            "Non-Commericial Fishing (Boat)",
-            "Ag/Golf Course Runoff",
-            "SST LT weekly range")
-
-par(mfrow=c(1,1),mar=c(16,4,4,2))
-barplot(as.numeric(Import),names.arg=Variables,las=2,ylab="Relative Importance",
-        main="Parameter Relative Importance, \nExposure Model Average",col=c(rep("red",3),rep("gray",length(Import)-3)))
-title(xlab="Hypothesized Bleaching Driver",line=14)
-
-bestmod=Dbase
-
-
-
-
-
-summary(globalmod)
-
-#Dredge Down to a Select Few
-dredgeset=dredge(globalmod,m.lim=c(1,5))
-
-#Swap Away
